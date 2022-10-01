@@ -29,7 +29,6 @@ docker build -t 2miners-metrics:latest .
 ```
 MINING_ADDRESS=<2miners Mining Address>
 RIG_NAME=<2miners Mining Name>
-IP_ADDRESS=<Machine IP>
 WALLET_ADDY=<For Blockchain.info>
 FARM_ID=<HiveOS Farm id>
 WORKER_ID=<HiveOS Worker id>
