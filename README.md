@@ -29,7 +29,6 @@ docker build -t 2miners-metrics:latest .
 ```
 MINING_ADDRESS=<2miners Mining Address>
 RIG_NAME=<2miners Mining Name>
-IP_ADDRESS=<Machine IP>
 WALLET_ADDY=<For Blockchain.info>
 FARM_ID=<HiveOS Farm id>
 ELECTRIC_COST=<cents 12=0.12>
@@ -42,11 +41,13 @@ CURRENCY=USD
 BASE_COIN=BTC
 MINING_COIN=
 MINING_DECIMALS=
+EXPORTER_PORT=
+APP_PORT=
 ```
 
 - Run it while listening on port 9877
 
 ```sh
-docker run -d --env-file ./.env -p 9877:9877 -v /opt/2miners-metrics/:/home --name 2miners-metrics --restart=always 2miners-metrics:latest
+docker run -d --env-file ./.env -p 9877:9877 -p 8888:8888 -v /opt/2miners-metrics/:/home --name 2miners-metrics --restart=always 2miners-metrics:latest
 ```
 ```
