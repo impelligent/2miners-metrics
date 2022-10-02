@@ -16,29 +16,17 @@ electric = float(os.environ.get("ELECTRIC_COST"))
 hive_key = os.environ.get("HIVE_KEY")
 cc_key = os.environ.get("CC_KEY")
 explorer_url = os.environ.get("EXPLORER_URL")
-decimal = int(os.environ.get("MINING_DECIMALS"))
+decimal = int(f'1{"0" * int(os.environ.get("MINING_DECIMALS", 8))}')
 polling_interval_seconds = int(os.getenv("POLLING_INTERVAL_SECONDS", 300))
 exporter_port = int(os.getenv("EXPORTER_PORT", 9877))
 api_port = int(os.environ.get("APP_PORT", 80))
 # init logger
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler("log_file.log"),
-        logging.StreamHandler()
-    ]
-)
-
-logger = logging.getLogger(__name__)
 
 class PromExporter:
     def __init__(self):
         
         """
         Prometheus Exporter Object
-
         executeProcess() - Main Process Loop
         fetchData() - Aggregates all Data
         getGauges() - Initializes the Prometheus Collectors
@@ -46,11 +34,8 @@ class PromExporter:
         writeFile() - Writes response Data to json file for apache to serve
         """
         logger.info(f"Init PromExporter")
-
         self.hive_headers = {"Authorization": f"Bearer {hive_key}"}
-        self.decimal = int(f'1{"0" * decimal}')
         self.getGauges()
-
         self.endpoints = {
             "price": f"",
             "2miners": f"{mining_coin.lower()}.2miners.com/api/accounts/{addy}",
@@ -60,7 +45,6 @@ class PromExporter:
                 'worker': f"{hive_url}/api/v2/farms/{hive_farm_id}/workers/{hive_worker_id}"
             }
         }
-
         self.data = {
             "price": {},
             "2miners": {},
@@ -70,7 +54,7 @@ class PromExporter:
                 'worker': {}
             }
         }
-        
+
     def executeProcess(self):
         # Metrics Loop
         logger.info(f"Beginning Exporter Running Loop")
@@ -100,7 +84,7 @@ class PromExporter:
                 self.data[key] = requests.get(f"https://{self.endpoints[key]}").json()
 
                 self.data[key].update({f"wallet_{key}_{base_coin}": round(
-                    self.data[key][wallet_address]["final_balance"] / self.decimal, 5, )})
+                    self.data[key][wallet_address]["final_balance"] / decimal, 5, )})
 
                 self.data[key].update({f"wallet_{key}_{currency}": round(
                     self.data[key][f"wallet_{key}_{base_coin}"]
@@ -134,14 +118,14 @@ class PromExporter:
                 self.data[key] = requests.get(f"https://{self.endpoints[key]}").json()
 
                 self.data[key].update({f"unpaid_balance_{mining_coin}": round(
-                    self.data[key]["stats"]["balance"] / self.decimal, 5)})
+                    self.data[key]["stats"]["balance"] / decimal, 5)})
 
                 self.data[key].update({f"unpaid_balance_{currency}": round(
                     self.data[key][f"unpaid_balance_{mining_coin}"] *
                     self.data["price"][f"price_{mining_coin}"][currency],2,)})
 
                 self.data[key].update({f"unpaid_last_24_hr_{mining_coin}": round(
-                    self.data[key]["sumrewards"][2]["reward"] / self.decimal, 5)})
+                    self.data[key]["sumrewards"][2]["reward"] / decimal, 5)})
 
                 self.data[key].update({f"unpaid_last_24_hr_{currency}": round(
                     self.data[key][f"unpaid_last_24_hr_{mining_coin}"] *
@@ -292,6 +276,7 @@ class PromExporter:
             
         self.gauges[f"jsonstats_price_{mining_coin}"].set(
             self.data["price"][f"price_{mining_coin}"][currency])
+
     def set_2miners(self):
         logger.info(f"Setting 2miners Data")
         two_miners = self.data["2miners"]
@@ -354,14 +339,14 @@ class PromExporter:
         return f"https://min-api.cryptocompare.com/data/price?fsym={coin}&tsyms={currency}&api_key={cc_key}"
 
     def writeFile(self):
-        logger.info(f"Writing Results Data for JSON API")
+        logger.info(f"Writing Results Data for JSON API...")
         with open("results.json", "w") as file:
             json.dump(self.data, file, indent=4)
-        logger.info("Data Write Complete")
+        logger.info("Results Data Write Complete")
 
 
 # Base Python HTTP Server to serve full json api
-class MyServer(BaseHTTPRequestHandler):
+class JSON_API(BaseHTTPRequestHandler):
     def _set_headers(self):
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
@@ -376,20 +361,36 @@ class MyServer(BaseHTTPRequestHandler):
         with open('results.json', 'r') as f:
             self.wfile.write(f.read().encode('utf-8'))
 
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("log_file.log"),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
 def main():
-    # Main entry point
     # init exporter object
     exporter = PromExporter()
+
     # init json api server
-    json_server = HTTPServer(('0.0.0.0', api_port), MyServer)
-    # init threads for jobs
-    thread1 = threading.Thread(target=exporter.executeProcess)
-    thread2 = threading.Thread(target=json_server.serve_forever)
-    # kickoff
-    # start prom http service
+    json_server = HTTPServer(('0.0.0.0', api_port), JSON_API)
+
+    jobs = {
+        'Exporter': threading.Thread(target=exporter.executeProcess),
+        'API': threading.Thread(target=json_server.serve_forever)
+    }
+
+    # start prom http service for /metrics
     start_http_server(exporter_port)
-    thread1.start()
-    thread2.start()
+
+    # kickoff jobs
+    for job in jobs.values():
+        job.start()
 
 if __name__ == "__main__":
     main()
